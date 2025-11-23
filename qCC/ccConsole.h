@@ -37,8 +37,12 @@ class ccCustomQListWidget : public QListWidget
   public:
 	ccCustomQListWidget(QWidget* parent = nullptr);
 
+	//! Updates colors of all items based on current palette
+	void updateItemColors();
+
   protected:
 	void keyPressEvent(QKeyEvent* event) override;
+	void changeEvent(QEvent* event) override;
 };
 
 //! Console

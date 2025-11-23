@@ -28,6 +28,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QColor>
+#include <QEvent>
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QSettings>
@@ -78,6 +79,61 @@ void ccCustomQListWidget::keyPressEvent(QKeyEvent* event)
 	else
 	{
 		QListWidget::keyPressEvent(event);
+	}
+}
+
+void ccCustomQListWidget::changeEvent(QEvent* event)
+{
+	if (event->type() == QEvent::PaletteChange)
+	{
+		// Theme/palette changed - update all item colors
+		updateItemColors();
+	}
+	QListWidget::changeEvent(event);
+}
+
+void ccCustomQListWidget::updateItemColors()
+{
+	// Get the current palette for theme-aware colors
+	QPalette palette = this->palette();
+
+	// Update colors for all existing items
+	for (int i = 0; i < count(); ++i)
+	{
+		QListWidgetItem* listItem = item(i);
+		if (!listItem)
+			continue;
+
+		// Retrieve the stored message level from item data
+		int level = listItem->data(Qt::UserRole).toInt();
+
+		// set color based on the message severity
+		if ((level & LOG_ERROR) == LOG_ERROR) // Error
+		{
+			// Derive error color from text color (red hue, high saturation)
+			QColor errorColor = palette.color(QPalette::Text);
+			errorColor.setHsv(0, 255, errorColor.value() > 128 ? 255 : 200); // Red hue
+			listItem->setForeground(errorColor);
+		}
+		else if ((level & LOG_WARNING) == LOG_WARNING) // Warning
+		{
+			// Derive warning color from text color (orange/yellow hue)
+			QColor warningColor = palette.color(QPalette::Text);
+			warningColor.setHsv(30, 255, warningColor.value() > 128 ? 255 : 180); // Orange hue
+			listItem->setForeground(warningColor);
+		}
+#ifdef QT_DEBUG
+		else if (level & DEBUG_FLAG) // Debug
+		{
+			// Use the standard link color (typically blue/cyan, theme-aware)
+			listItem->setForeground(palette.color(QPalette::Link));
+		}
+#endif
+		else
+		{
+			// Reset to default text color for normal messages
+			listItem->setData(Qt::ForegroundRole, QVariant());
+		}
 	}
 }
 
@@ -292,6 +348,9 @@ void ccConsole::refresh()
 				{
 					// messagePair.first = message text
 					QListWidgetItem* item = new QListWidgetItem(messagePair.first);
+
+					// Store the message level in item data for runtime theme changes
+					item->setData(Qt::UserRole, messagePair.second);
 
 					// Get the current palette for theme-aware colors
 					QPalette palette = m_textDisplay->palette();
