@@ -97,6 +97,9 @@ void ccCustomQListWidget::updateItemColors()
 	// Get the current palette for theme-aware colors
 	QPalette palette = this->palette();
 
+	// Determine if we're in a dark theme by checking text brightness
+	bool isDarkTheme = palette.color(QPalette::Text).value() > 128;
+
 	// Update colors for all existing items
 	for (int i = 0; i < count(); ++i)
 	{
@@ -110,16 +113,16 @@ void ccCustomQListWidget::updateItemColors()
 		// set color based on the message severity
 		if ((level & ccLog::LOG_ERROR) == ccLog::LOG_ERROR) // Error
 		{
-			// Derive error color from text color (red hue, high saturation)
-			QColor errorColor = palette.color(QPalette::Text);
-			errorColor.setHsv(0, 255, errorColor.value() > 128 ? 255 : 200); // Red hue
+			// Red color with high contrast for both themes
+			QColor errorColor;
+			errorColor.setHsv(0, 255, isDarkTheme ? 255 : 170); // Bright red for dark, darker red for light
 			listItem->setForeground(errorColor);
 		}
 		else if ((level & ccLog::LOG_WARNING) == ccLog::LOG_WARNING) // Warning
 		{
-			// Derive warning color from text color (orange/yellow hue)
-			QColor warningColor = palette.color(QPalette::Text);
-			warningColor.setHsv(30, 255, warningColor.value() > 128 ? 255 : 180); // Orange hue
+			// Orange/yellow color with better contrast
+			QColor warningColor;
+			warningColor.setHsv(25, isDarkTheme ? 255 : 220, isDarkTheme ? 255 : 130); // Bright orange for dark, darker orange for light
 			listItem->setForeground(warningColor);
 		}
 #ifdef QT_DEBUG
@@ -355,19 +358,22 @@ void ccConsole::refresh()
 					// Get the current palette for theme-aware colors
 					QPalette palette = m_textDisplay->palette();
 
+					// Determine if we're in a dark theme by checking text brightness
+					bool isDarkTheme = palette.color(QPalette::Text).value() > 128;
+
 					// set color based on the message severity
 					if ((messagePair.second & LOG_ERROR) == LOG_ERROR) // Error
 					{
-						// Derive error color from text color (red hue, high saturation)
-						QColor errorColor = palette.color(QPalette::Text);
-						errorColor.setHsv(0, 255, errorColor.value() > 128 ? 255 : 200); // Red hue
+						// Red color with high contrast for both themes
+						QColor errorColor;
+						errorColor.setHsv(0, 255, isDarkTheme ? 255 : 170); // Bright red for dark, darker red for light
 						item->setForeground(errorColor);
 					}
 					else if ((messagePair.second & LOG_WARNING) == LOG_WARNING) // Warning
 					{
-						// Derive warning color from text color (orange/yellow hue)
-						QColor warningColor = palette.color(QPalette::Text);
-						warningColor.setHsv(30, 255, warningColor.value() > 128 ? 255 : 180); // Orange hue
+						// Orange/yellow color with better contrast
+						QColor warningColor;
+						warningColor.setHsv(25, isDarkTheme ? 255 : 220, isDarkTheme ? 255 : 130); // Bright orange for dark, darker orange for light
 						item->setForeground(warningColor);
 						// we also force the console visibility if a warning message arrives!
 						if (m_parentWindow)
