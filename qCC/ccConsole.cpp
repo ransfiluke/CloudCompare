@@ -108,14 +108,14 @@ void ccCustomQListWidget::updateItemColors()
 		int level = listItem->data(Qt::UserRole).toInt();
 
 		// set color based on the message severity
-		if ((level & LOG_ERROR) == LOG_ERROR) // Error
+		if ((level & ccLog::LOG_ERROR) == ccLog::LOG_ERROR) // Error
 		{
 			// Derive error color from text color (red hue, high saturation)
 			QColor errorColor = palette.color(QPalette::Text);
 			errorColor.setHsv(0, 255, errorColor.value() > 128 ? 255 : 200); // Red hue
 			listItem->setForeground(errorColor);
 		}
-		else if ((level & LOG_WARNING) == LOG_WARNING) // Warning
+		else if ((level & ccLog::LOG_WARNING) == ccLog::LOG_WARNING) // Warning
 		{
 			// Derive warning color from text color (orange/yellow hue)
 			QColor warningColor = palette.color(QPalette::Text);
@@ -123,7 +123,7 @@ void ccCustomQListWidget::updateItemColors()
 			listItem->setForeground(warningColor);
 		}
 #ifdef QT_DEBUG
-		else if (level & DEBUG_FLAG) // Debug
+		else if (level & ccLog::DEBUG_FLAG) // Debug
 		{
 			// Use the standard link color (typically blue/cyan, theme-aware)
 			listItem->setForeground(palette.color(QPalette::Link));
