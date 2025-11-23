@@ -18,6 +18,7 @@
 // ##########################################################################
 
 // Qt
+#include <QDateTime>
 #include <QFont>
 #include <QString>
 #include <QStringList>

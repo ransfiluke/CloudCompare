@@ -19,6 +19,7 @@
 
 // Qt
 #include <QColor>
+#include <QPalette>
 
 // qCC_db
 #include <ccLog.h>
