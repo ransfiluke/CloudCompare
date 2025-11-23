@@ -670,7 +670,7 @@ QTreeView::branch:open:has-children:has-siblings  {
    <widget class="QWidget" name="dockWidgetContents_2">
     <layout class="QVBoxLayout">
      <item>
-      <widget class="ccCustomQListWidget" name="consoleWidget">
+      <widget class="ccConsoleWidget" name="consoleWidget">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Ignored" vsizetype="Ignored">
          <horstretch>0</horstretch>
@@ -683,17 +683,8 @@ QTreeView::branch:open:has-children:has-siblings  {
          <height>80</height>
         </size>
        </property>
-       <property name="editTriggers">
-        <set>QAbstractItemView::NoEditTriggers</set>
-       </property>
-       <property name="showDropIndicator" stdset="0">
-        <bool>false</bool>
-       </property>
-       <property name="alternatingRowColors">
+       <property name="readOnly">
         <bool>true</bool>
-       </property>
-       <property name="selectionMode">
-        <enum>QAbstractItemView::ExtendedSelection</enum>
        </property>
       </widget>
      </item>
@@ -3327,6 +3318,11 @@ The active scalar field should have integer values.</string>
    <class>ccCustomQListWidget</class>
    <extends>QListWidget</extends>
    <header location="global">ccConsole.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ccConsoleWidget</class>
+   <extends>QPlainTextEdit</extends>
+   <header location="global">ccConsoleWidget.h</header>
   </customwidget>
  </customwidgets>
  <resources>

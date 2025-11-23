@@ -28,6 +28,7 @@
 
 class MainWindow;
 class QTextStream;
+class ccConsoleWidget;
 
 //! Custom QListWidget to allow for the copy of all selected elements when using CTRL+C
 class ccCustomQListWidget : public QListWidget
@@ -65,6 +66,17 @@ class ccConsole : public QObject
 	                 QWidget*     parentWidget     = nullptr,
 	                 MainWindow*  parentWindow     = nullptr,
 	                 bool         redirectToStdOut = false);
+
+	//! Inits console with new terminal-style widget
+	/** \param consoleWidget the new console widget (optional)
+	    \param parentWidget parent widget (optional)
+	    \param parentWindow parent window (if any - optional)
+	    \param redirectToStdOut whether to redirect log messages to the system std::out output or not (optional)
+	**/
+	static void InitWithConsoleWidget(ccConsoleWidget* consoleWidget,
+	                                  QWidget*         parentWidget     = nullptr,
+	                                  MainWindow*      parentWindow     = nullptr,
+	                                  bool             redirectToStdOut = false);
 
 	//! Returns the (unique) static instance
 	/** \param autoInit automatically initialize the console instance (with no widget!) if not done already
@@ -116,8 +128,11 @@ class ccConsole : public QObject
 	// inherited from ccLog
 	void logMessage(const QString& message, int level) override;
 
-	//! Associated text display widget
+	//! Associated text display widget (legacy)
 	QListWidget* m_textDisplay;
+
+	//! New console widget (terminal-style)
+	ccConsoleWidget* m_consoleWidget;
 
 	//! Parent widget
 	QWidget* m_parentWidget;

@@ -234,7 +234,7 @@ MainWindow::MainWindow()
 	m_UI->menuFile->insertMenu(m_UI->actionSave, m_recentFiles->menu());
 
 	// Console
-	ccConsole::Init(m_UI->consoleWidget, this, this);
+	ccConsole::InitWithConsoleWidget(m_UI->consoleWidget, this, this);
 	m_UI->actionEnableQtWarnings->setChecked(ccConsole::QtMessagesEnabled());
 
 	// advanced widgets not handled by QDesigner

@@ -18,6 +18,7 @@
 #include "ccConsole.h"
 
 // Local
+#include "ccConsoleWidget.h"
 #include "ccPersistentSettings.h"
 #include "mainwindow.h"
 
@@ -129,6 +130,7 @@ void ccConsole::ReleaseInstance(bool flush /*=true*/)
 
 ccConsole::ccConsole()
     : m_textDisplay(nullptr)
+    , m_consoleWidget(nullptr)
     , m_parentWidget(nullptr)
     , m_parentWindow(nullptr)
     , m_logStream(nullptr)
@@ -252,6 +254,51 @@ void ccConsole::Init(QListWidget* textDisplay /*=nullptr*/,
 	ccLog::RegisterInstance(s_console.instance);
 }
 
+void ccConsole::InitWithConsoleWidget(ccConsoleWidget* consoleWidget /*=nullptr*/,
+                                      QWidget*         parentWidget /*=nullptr*/,
+                                      MainWindow*      parentWindow /*=nullptr*/,
+                                      bool             redirectToStdOut /*=false*/)
+{
+	// should be called only once!
+	if (s_console.instance)
+	{
+		assert(false);
+		return;
+	}
+
+	s_console.instance                  = new ccConsole;
+	s_console.instance->m_consoleWidget = consoleWidget;
+	s_console.instance->m_textDisplay   = nullptr; // Not using legacy widget
+	s_console.instance->m_parentWidget  = parentWidget;
+	s_console.instance->m_parentWindow  = parentWindow;
+	s_redirectToStdOut                  = redirectToStdOut;
+
+	if (s_redirectToStdOut)
+	{
+		// make the system console/terminal more responsive by removing any buffering
+		setbuf(stdout, NULL);
+	}
+
+	// auto-start
+	if (consoleWidget)
+	{
+		// Load console widget settings
+		consoleWidget->loadSettings();
+
+		// load from persistent settings
+		QSettings settings;
+		settings.beginGroup(ccPS::Console());
+		s_showQtMessagesInConsole = settings.value("QtMessagesEnabled", false).toBool();
+		settings.endGroup();
+
+		// install : set the callback for Qt messages
+		qInstallMessageHandler(MyMessageOutput);
+
+		s_console.instance->setAutoRefresh(true);
+	}
+	ccLog::RegisterInstance(s_console.instance);
+}
+
 bool ccConsole::autoRefresh() const
 {
 	return m_timer.isActive();
@@ -277,18 +324,39 @@ void ccConsole::refresh()
 
 	if (!m_queue.isEmpty())
 	{
-		if (m_textDisplay || m_logStream)
+		if (m_textDisplay || m_consoleWidget || m_logStream)
 		{
 			for (auto messagePair : m_queue)
 			{
-				// destination: log file
+				// destination: log file (always include timestamp)
 				if (m_logStream)
 				{
-					*m_logStream << messagePair.first << Qt::endl;
+					QString logMessage = messagePair.first;
+					// If using new console widget, the message is raw, so add timestamp
+					if (m_consoleWidget && !logMessage.startsWith('['))
+					{
+						logMessage = QStringLiteral("[") + QTime::currentTime().toString() + QStringLiteral("] ") + logMessage;
+					}
+					*m_logStream << logMessage << Qt::endl;
 				}
 
-				// destination: console widget
-				if (m_textDisplay)
+				// destination: new console widget
+				if (m_consoleWidget)
+				{
+					// The message is raw (no timestamp), formatting happens in the widget
+					m_consoleWidget->appendMessage(messagePair.first, messagePair.second, QDateTime::currentDateTime());
+
+					// Force console visibility for warnings
+					if ((messagePair.second & LOG_WARNING) == LOG_WARNING)
+					{
+						if (m_parentWindow)
+						{
+							m_parentWindow->forceConsoleDisplay();
+						}
+					}
+				}
+				// destination: legacy console widget
+				else if (m_textDisplay)
 				{
 					// messagePair.first = message text
 					QListWidgetItem* item = new QListWidgetItem(messagePair.first);
@@ -327,6 +395,7 @@ void ccConsole::refresh()
 			{
 				m_textDisplay->scrollToBottom();
 			}
+			// Note: ccConsoleWidget handles scrolling internally with auto-scroll setting
 		}
 
 		m_queue.clear();
@@ -343,12 +412,27 @@ void ccConsole::logMessage(const QString& message, int level)
 		return;
 	}
 
-	QString formatedMessage = QStringLiteral("[") + QTime::currentTime().toString() + QStringLiteral("] ") + message;
+	// For the new console widget, we store the raw message (formatting happens in the widget)
+	// For legacy widget and log file, we use the old formatted message
+	QString formatedMessage;
+	if (m_consoleWidget)
+	{
+		// Store raw message for new widget (it will format it itself)
+		formatedMessage = message;
+	}
+	else
+	{
+		// Legacy formatting with timestamp
+		formatedMessage = QStringLiteral("[") + QTime::currentTime().toString() + QStringLiteral("] ") + message;
+	}
+
 	if (s_redirectToStdOut)
 	{
-		printf("%s\n", qPrintable(formatedMessage));
+		// Always include timestamp for stdout
+		QString stdoutMessage = QStringLiteral("[") + QTime::currentTime().toString() + QStringLiteral("] ") + message;
+		printf("%s\n", qPrintable(stdoutMessage));
 	}
-	if (m_textDisplay || m_logStream)
+	if (m_textDisplay || m_consoleWidget || m_logStream)
 	{
 		m_mutex.lock();
 		m_queue.push_back(ConsoleItemType(formatedMessage, level));
