@@ -16,25 +16,39 @@
 // ##########################################################################
 
 #include "ccConsoleWidget.h"
+#include "ccConsoleSettingsDlg.h"
 
 // Qt
 #include <QApplication>
 #include <QClipboard>
 #include <QContextMenuEvent>
+#include <QFile>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QPalette>
+#include <QRegularExpression>
 #include <QScrollBar>
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextCursor>
+#include <QTextStream>
 
 ccConsoleWidget::ccConsoleWidget(QWidget* parent)
     : QPlainTextEdit(parent)
     , m_formatter(&m_settings)
     , m_autoScroll(true)
     , m_lineCount(0)
+    , m_searchCaseSensitive(false)
+    , m_searchUseRegex(false)
+    , m_currentMatchIndex(-1)
+    , m_logLevelFilter(0)
 {
+	// Initialize level filters (all enabled by default)
+	m_levelEnabled[0] = true; // VERBOSE
+	m_levelEnabled[1] = true; // STANDARD
+	m_levelEnabled[2] = true; // IMPORTANT
+	m_levelEnabled[3] = true; // WARNING
+	m_levelEnabled[4] = true; // ERROR
 	// Set read-only
 	setReadOnly(true);
 
@@ -68,14 +82,22 @@ void ccConsoleWidget::appendMessage(const QString&   message,
                                     const QDateTime& timestamp,
                                     const QString&   category)
 {
-	// Check if message should be filtered out
-	if ((level & 7) < m_settings.minLogLevel())
+	// Store the message
+	LogEntry entry(message, level, timestamp, category);
+	entry.formattedText = m_formatter.format(message, level, timestamp, category);
+	m_messages.append(entry);
+
+	// Check if message should be displayed based on filters
+	if (!shouldDisplayMessage(level, category))
 	{
 		return;
 	}
 
-	// Format the message
-	QString formattedMessage = m_formatter.format(message, level, timestamp, category);
+	// Check if message should be filtered out by settings
+	if ((level & 7) < m_settings.minLogLevel())
+	{
+		return;
+	}
 
 	// Get color for this log level
 	bool isDark = isDarkTheme();
@@ -92,12 +114,20 @@ void ccConsoleWidget::appendMessage(const QString&   message,
 	cursor.setCharFormat(format);
 
 	// Append the message
-	cursor.insertText(formattedMessage + "\n");
+	cursor.insertText(entry.formattedText + "\n");
 
 	// Increment line count
 	m_lineCount++;
 
-	// Trim lines if necessary
+	// Trim stored messages if necessary
+	if (m_messages.size() > m_settings.maxLines())
+	{
+		// Remove old messages from storage
+		int toRemove = m_messages.size() - m_settings.maxLines();
+		m_messages.remove(0, toRemove);
+	}
+
+	// Trim displayed lines if necessary
 	if (m_lineCount > m_settings.maxLines())
 	{
 		trimLines();
@@ -135,7 +165,9 @@ void ccConsoleWidget::applyTheme()
 void ccConsoleWidget::clearConsole()
 {
 	clear();
+	m_messages.clear();
 	m_lineCount = 0;
+	clearSearch();
 }
 
 int ccConsoleWidget::lineCount() const
@@ -146,6 +178,83 @@ int ccConsoleWidget::lineCount() const
 QString ccConsoleWidget::exportPlainText() const
 {
 	return toPlainText();
+}
+
+QString ccConsoleWidget::exportFiltered() const
+{
+	QString result;
+	for (const LogEntry& entry : m_messages)
+	{
+		if (shouldDisplayMessage(entry.level, entry.category))
+		{
+			if ((entry.level & 7) >= m_settings.minLogLevel())
+			{
+				// Export raw message without formatting
+				result += entry.message + "\n";
+			}
+		}
+	}
+	return result;
+}
+
+QString ccConsoleWidget::exportFormatted() const
+{
+	QString result;
+	for (const LogEntry& entry : m_messages)
+	{
+		if (shouldDisplayMessage(entry.level, entry.category))
+		{
+			if ((entry.level & 7) >= m_settings.minLogLevel())
+			{
+				// Export formatted message
+				result += entry.formattedText + "\n";
+			}
+		}
+	}
+	return result;
+}
+
+bool ccConsoleWidget::exportToFile(const QString& filename, bool filtered, bool includeFormatting)
+{
+	QFile file(filename);
+	if (!file.open(QFile::WriteOnly | QFile::Text))
+	{
+		return false;
+	}
+
+	QTextStream out(&file);
+
+	if (filtered)
+	{
+		// Export only filtered messages
+		for (const LogEntry& entry : m_messages)
+		{
+			if (shouldDisplayMessage(entry.level, entry.category))
+			{
+				if ((entry.level & 7) >= m_settings.minLogLevel())
+				{
+					if (includeFormatting)
+						out << entry.formattedText << Qt::endl;
+					else
+						out << entry.message << Qt::endl;
+				}
+			}
+		}
+	}
+	else
+	{
+		// Export all messages
+		for (const LogEntry& entry : m_messages)
+		{
+			if (includeFormatting)
+				out << entry.formattedText << Qt::endl;
+			else
+				out << entry.message << Qt::endl;
+		}
+	}
+
+	file.close();
+	return true;
 }
 
 void ccConsoleWidget::setAutoScroll(bool enable)
@@ -184,6 +293,18 @@ void ccConsoleWidget::saveSettings()
 	m_settings.save();
 }
 
+void ccConsoleWidget::showSettingsDialog()
+{
+	ccConsoleSettingsDlg dlg(&m_settings, this);
+	if (dlg.exec() == QDialog::Accepted)
+	{
+		// Reload settings and refresh display
+		loadSettings();
+		applyTheme();
+		refreshDisplay();
+	}
+}
+
 void ccConsoleWidget::changeEvent(QEvent* event)
 {
 	if (event->type() == QEvent::PaletteChange)
@@ -205,6 +326,15 @@ void ccConsoleWidget::contextMenuEvent(QContextMenuEvent* event)
 	// Add custom actions
 	menu->addSeparator();
 
+	// Search action
+	QAction* findAction = menu->addAction("Find... (Ctrl+F)");
+	connect(findAction, &QAction::triggered, this, [this]() {
+		// Emit a signal or call a method to show search widget
+		// For now, we'll handle this via keyboard shortcut
+	});
+
+	menu->addSeparator();
+
 	QAction* clearAction = menu->addAction("Clear Console");
 	connect(clearAction, &QAction::triggered, this, &ccConsoleWidget::clearConsole);
 
@@ -213,12 +343,81 @@ void ccConsoleWidget::contextMenuEvent(QContextMenuEvent* event)
 		QApplication::clipboard()->setText(exportPlainText());
 	});
 
+	// Export submenu
+	QMenu* exportMenu = menu->addMenu("Export...");
+
+	QAction* exportAllAction = exportMenu->addAction("Export All Messages");
+	connect(exportAllAction, &QAction::triggered, [this]() {
+		// This would need to integrate with file dialog
+		// For now, just copy to clipboard
+		QApplication::clipboard()->setText(exportFormatted());
+	});
+
+	QAction* exportFilteredAction = exportMenu->addAction("Export Filtered Messages");
+	connect(exportFilteredAction, &QAction::triggered, [this]() {
+		QApplication::clipboard()->setText(exportFiltered());
+	});
+
+	menu->addSeparator();
+
+	// Filter submenu
+	QMenu* filterMenu = menu->addMenu("Filter by Level");
+
+	QAction* showAllAction = filterMenu->addAction("Show All");
+	connect(showAllAction, &QAction::triggered, [this]() {
+		for (int i = 0; i <= 4; ++i)
+			setLogLevelEnabled(i, true);
+	});
+
+	filterMenu->addSeparator();
+
+	QAction* verboseAction = filterMenu->addAction("Verbose");
+	verboseAction->setCheckable(true);
+	verboseAction->setChecked(isLogLevelEnabled(0));
+	connect(verboseAction, &QAction::triggered, [this](bool checked) {
+		setLogLevelEnabled(0, checked);
+	});
+
+	QAction* standardAction = filterMenu->addAction("Standard");
+	standardAction->setCheckable(true);
+	standardAction->setChecked(isLogLevelEnabled(1));
+	connect(standardAction, &QAction::triggered, [this](bool checked) {
+		setLogLevelEnabled(1, checked);
+	});
+
+	QAction* importantAction = filterMenu->addAction("Important");
+	importantAction->setCheckable(true);
+	importantAction->setChecked(isLogLevelEnabled(2));
+	connect(importantAction, &QAction::triggered, [this](bool checked) {
+		setLogLevelEnabled(2, checked);
+	});
+
+	QAction* warningAction = filterMenu->addAction("Warnings");
+	warningAction->setCheckable(true);
+	warningAction->setChecked(isLogLevelEnabled(3));
+	connect(warningAction, &QAction::triggered, [this](bool checked) {
+		setLogLevelEnabled(3, checked);
+	});
+
+	QAction* errorAction = filterMenu->addAction("Errors");
+	errorAction->setCheckable(true);
+	errorAction->setChecked(isLogLevelEnabled(4));
+	connect(errorAction, &QAction::triggered, [this](bool checked) {
+		setLogLevelEnabled(4, checked);
+	});
+
 	menu->addSeparator();
 
 	QAction* autoScrollAction = menu->addAction("Auto-scroll");
 	autoScrollAction->setCheckable(true);
 	autoScrollAction->setChecked(m_autoScroll);
 	connect(autoScrollAction, &QAction::triggered, this, &ccConsoleWidget::setAutoScroll);
+
+	menu->addSeparator();
+
+	// Settings action
+	QAction* settingsAction = menu->addAction("Settings...");
+	connect(settingsAction, &QAction::triggered, this, &ccConsoleWidget::showSettingsDialog);
 
 	menu->exec(event->globalPos());
 	delete menu;
@@ -279,5 +478,248 @@ bool ccConsoleWidget::isDarkTheme() const
 	case ccConsoleSettings::AutoDetect:
 	default:
 		return ccConsoleTheme::isDarkPalette(QApplication::palette());
+	}
+}
+
+// Search functionality
+int ccConsoleWidget::search(const QString& text, bool caseSensitive, bool useRegex)
+{
+	m_searchText = text;
+	m_searchCaseSensitive = caseSensitive;
+	m_searchUseRegex = useRegex;
+	m_searchMatches.clear();
+	m_currentMatchIndex = -1;
+
+	if (text.isEmpty())
+	{
+		clearSearch();
+		return 0;
+	}
+
+	// Search through all visible text
+	QTextDocument* doc = document();
+	QTextCursor cursor(doc);
+
+	QTextDocument::FindFlags flags;
+	if (caseSensitive)
+		flags |= QTextDocument::FindCaseSensitively;
+
+	int matchCount = 0;
+	while (true)
+	{
+		if (useRegex)
+		{
+			QRegularExpression regex(text);
+			if (!caseSensitive)
+				regex.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
+			cursor = doc->find(regex, cursor);
+		}
+		else
+		{
+			cursor = doc->find(text, cursor, flags);
+		}
+
+		if (cursor.isNull())
+			break;
+
+		m_searchMatches.append(cursor.blockNumber());
+		matchCount++;
+	}
+
+	if (matchCount > 0)
+	{
+		m_currentMatchIndex = 0;
+		highlightSearchResults();
+	}
+
+	emit searchResultsChanged(matchCount > 0 ? 1 : 0, matchCount);
+	return matchCount;
+}
+
+void ccConsoleWidget::clearSearch()
+{
+	m_searchText.clear();
+	m_searchMatches.clear();
+	m_currentMatchIndex = -1;
+
+	// Clear any extra selections (highlights)
+	QList<QTextEdit::ExtraSelection> selections;
+	setExtraSelections(selections);
+
+	emit searchResultsChanged(0, 0);
+}
+
+bool ccConsoleWidget::findNext()
+{
+	if (m_searchMatches.isEmpty())
+		return false;
+
+	m_currentMatchIndex = (m_currentMatchIndex + 1) % m_searchMatches.size();
+	highlightSearchResults();
+	emit searchResultsChanged(m_currentMatchIndex + 1, m_searchMatches.size());
+	return true;
+}
+
+bool ccConsoleWidget::findPrevious()
+{
+	if (m_searchMatches.isEmpty())
+		return false;
+
+	m_currentMatchIndex--;
+	if (m_currentMatchIndex < 0)
+		m_currentMatchIndex = m_searchMatches.size() - 1;
+
+	highlightSearchResults();
+	emit searchResultsChanged(m_currentMatchIndex + 1, m_searchMatches.size());
+	return true;
+}
+
+void ccConsoleWidget::highlightSearchResults()
+{
+	QList<QTextEdit::ExtraSelection> selections;
+
+	if (!m_searchText.isEmpty() && !m_searchMatches.isEmpty())
+	{
+		QTextDocument* doc = document();
+		QTextCursor cursor(doc);
+
+		QTextDocument::FindFlags flags;
+		if (m_searchCaseSensitive)
+			flags |= QTextDocument::FindCaseSensitively;
+
+		// Highlight all matches
+		QColor highlightColor = isDarkTheme() ? QColor(100, 100, 50) : QColor(255, 255, 100);
+		QColor currentHighlightColor = isDarkTheme() ? QColor(150, 100, 50) : QColor(255, 200, 100);
+
+		int matchIndex = 0;
+		while (true)
+		{
+			if (m_searchUseRegex)
+			{
+				QRegularExpression regex(m_searchText);
+				if (!m_searchCaseSensitive)
+					regex.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
+				cursor = doc->find(regex, cursor);
+			}
+			else
+			{
+				cursor = doc->find(m_searchText, cursor, flags);
+			}
+
+			if (cursor.isNull())
+				break;
+
+			QTextEdit::ExtraSelection selection;
+			selection.cursor = cursor;
+			selection.format.setBackground(matchIndex == m_currentMatchIndex ? currentHighlightColor : highlightColor);
+			selections.append(selection);
+
+			matchIndex++;
+
+			// Scroll to current match
+			if (matchIndex - 1 == m_currentMatchIndex)
+			{
+				setTextCursor(cursor);
+			}
+		}
+	}
+
+	setExtraSelections(selections);
+}
+
+// Filtering functionality
+void ccConsoleWidget::setLogLevelFilter(int level)
+{
+	m_logLevelFilter = level;
+	refreshDisplay();
+}
+
+void ccConsoleWidget::setLogLevelEnabled(int level, bool enabled)
+{
+	m_levelEnabled[level] = enabled;
+	refreshDisplay();
+}
+
+bool ccConsoleWidget::isLogLevelEnabled(int level) const
+{
+	return m_levelEnabled.value(level, true);
+}
+
+bool ccConsoleWidget::shouldDisplayMessage(int level, const QString& category) const
+{
+	// Check minimum level filter
+	int msgLevel = level & 7;
+	if (msgLevel < m_logLevelFilter)
+		return false;
+
+	// Check per-level enable/disable
+	if (!m_levelEnabled.value(msgLevel, true))
+		return false;
+
+	// Check category filter (if categories are enabled)
+	if (m_settings.showCategories() && !category.isEmpty())
+	{
+		const QStringList& enabled = m_settings.enabledCategories();
+		if (!enabled.isEmpty() && !enabled.contains(category))
+			return false;
+	}
+
+	return true;
+}
+
+void ccConsoleWidget::refreshDisplay()
+{
+	// Save scroll position
+	QScrollBar* scrollBar = verticalScrollBar();
+	int scrollPos = scrollBar->value();
+	bool wasAtBottom = (scrollPos == scrollBar->maximum());
+
+	// Clear current display
+	clear();
+	m_lineCount = 0;
+
+	// Rebuild from stored messages
+	bool isDark = isDarkTheme();
+
+	for (const LogEntry& entry : m_messages)
+	{
+		if (!shouldDisplayMessage(entry.level, entry.category))
+			continue;
+
+		if ((entry.level & 7) < m_settings.minLogLevel())
+			continue;
+
+		// Get color for this log level
+		QColor textColor = m_theme.getColorForLevel(entry.level, isDark);
+
+		// Move cursor to end
+		QTextCursor cursor = textCursor();
+		cursor.movePosition(QTextCursor::End);
+
+		// Set text color
+		QTextCharFormat format;
+		format.setForeground(QBrush(textColor));
+
+		cursor.setCharFormat(format);
+
+		// Append the message
+		cursor.insertText(entry.formattedText + "\n");
+		m_lineCount++;
+	}
+
+	// Restore scroll position
+	if (wasAtBottom || m_autoScroll)
+	{
+		scrollBar->setValue(scrollBar->maximum());
+	}
+	else
+	{
+		scrollBar->setValue(scrollPos);
+	}
+
+	// Reapply search highlights if active
+	if (!m_searchText.isEmpty())
+	{
+		search(m_searchText, m_searchCaseSensitive, m_searchUseRegex);
 	}
 }
