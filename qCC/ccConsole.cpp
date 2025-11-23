@@ -297,6 +297,20 @@ void ccConsole::Init(QListWidget* textDisplay /*=nullptr*/,
 	// auto-start
 	if (textDisplay)
 	{
+		// Set theme-aware stylesheet for selection/hover highlighting
+		textDisplay->setStyleSheet(
+			"QListWidget::item:hover {"
+			"    background-color: palette(midlight);"
+			"}"
+			"QListWidget::item:selected {"
+			"    background-color: palette(highlight);"
+			"    color: palette(highlighted-text);"
+			"}"
+			"QListWidget::item:selected:hover {"
+			"    background-color: palette(highlight);"
+			"}"
+		);
+
 		// load from persistent settings
 		QSettings settings;
 		settings.beginGroup(ccPS::Console());
