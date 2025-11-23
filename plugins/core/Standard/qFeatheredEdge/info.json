@@ -1,0 +1,21 @@
+{
+	"type" : "Standard",
+	"core" : false,
+	"name" : "Feathered Edge",
+	"icon" : ":/CC/plugin/qFeatheredEdge/images/icon.png",
+	"description": "Creates a feathered edge effect by applying distance-based random point reduction with customizable fall-off curves. Useful for improving the aesthetic appearance of point clouds with hard edges from terrestrial scanning or photogrammetry.",
+	"authors" : [
+		{
+			"name" : "CloudCompare Community",
+			"email" : ""
+		}
+	],
+	"maintainers" : [
+	],
+	"references": [
+		{
+			"text": "Documentation",
+			"url": "https://www.cloudcompare.org/doc/wiki/index.php?title=Feathered_Edge_(plugin)"
+		}
+	]
+}
