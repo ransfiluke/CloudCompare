@@ -293,14 +293,20 @@ void ccConsole::refresh()
 					// messagePair.first = message text
 					QListWidgetItem* item = new QListWidgetItem(messagePair.first);
 
+					// Get the current palette to determine theme-aware colors
+					QPalette palette = QApplication::palette();
+					bool isDarkTheme = (palette.color(QPalette::Window).lightness() < 128);
+
 					// set color based on the message severity
 					if ((messagePair.second & LOG_ERROR) == LOG_ERROR) // Error
 					{
-						item->setForeground(Qt::red);
+						// Use brighter red for dark themes, standard red for light themes
+						item->setForeground(isDarkTheme ? QColor(255, 100, 100) : Qt::red);
 					}
 					else if ((messagePair.second & LOG_WARNING) == LOG_WARNING) // Warning
 					{
-						item->setForeground(Qt::darkRed);
+						// Use orange/yellow for dark themes, dark red for light themes
+						item->setForeground(isDarkTheme ? QColor(255, 165, 0) : Qt::darkRed);
 						// we also force the console visibility if a warning message arrives!
 						if (m_parentWindow)
 						{
@@ -310,7 +316,8 @@ void ccConsole::refresh()
 #ifdef QT_DEBUG
 					else if (messagePair.second & DEBUG_FLAG) // Debug
 					{
-						item->setForeground(Qt::blue);
+						// Use cyan for dark themes, blue for light themes
+						item->setForeground(isDarkTheme ? QColor(100, 200, 255) : Qt::blue);
 					}
 #endif
 
